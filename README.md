@@ -2,6 +2,14 @@
 
 This folder recreates the useful part of Adaptyv Bio's Nipah iPSAE notebook, but makes the target configurable so you can score your own binder designs against a different protein.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/elektra773/Reranking-Binders-Bindcraft/blob/main/Binder_iPSAE_Colab.ipynb)
+
+## Start here
+
+- GitHub repo: [elektra773/Reranking-Binders-Bindcraft](https://github.com/elektra773/Reranking-Binders-Bindcraft)
+- Open the notebook in Colab: [Binder_iPSAE_Colab.ipynb](https://colab.research.google.com/github/elektra773/Reranking-Binders-Bindcraft/blob/main/Binder_iPSAE_Colab.ipynb)
+- Local source-of-truth folder: `/Users/elektramakris/Desktop/SOTOMAYOR/Thesis/Rescoring Binders/binder-ipsae-pipeline`
+
 ## What is included
 
 - `binder_ipsae_pipeline.py`
@@ -27,6 +35,21 @@ If you want this script to also run predictions, install Boltz separately. The c
 ```bash
 python3 -m pip install boltz
 ```
+
+## EC1 quick start
+
+For your current CDH23 EC1 binder set, the easiest local entry point is the BindCraft CSV you already have:
+
+```bash
+python3 binder_ipsae_pipeline.py prepare \
+  --target-pdb ../EC1-2/EC1.pdb \
+  --target-pdb-chain A \
+  --target-name CDH23_EC1 \
+  --binder-csv ../EC1-2/final_design_stats.csv \
+  --work-dir binder_ipsae_runs
+```
+
+That command builds one Boltz input YAML per ranked binder and keeps the rank and design name from `final_design_stats.csv`.
 
 ## Typical workflow
 
@@ -72,7 +95,7 @@ python3 binder_ipsae_pipeline.py predict-and-score \
   --target-pdb EC1-2/EC1.pdb \
   --target-pdb-chain A \
   --target-name CDH23_EC1 \
-  --binder-fasta binders.fasta \
+  --binder-csv EC1-2/final_design_stats.csv \
   --work-dir binder_ipsae_runs \
   --use-msa-server \
   --summary-csv binder_ipsae_runs/ipsae_summary.csv
@@ -106,11 +129,50 @@ python3 binder_ipsae_pipeline.py score-batch \
   --summary-csv binder_ipsae_runs/ipsae_summary.csv
 ```
 
+## Modes
+
+- `prepare`
+  - creates YAML inputs and a manifest only
+  - use this when you want to inspect jobs before spending GPU time
+- `predict-and-score`
+  - creates inputs, runs Boltz, then runs `ipsae.py`
+  - this is the full end-to-end mode
+- `score`
+  - scores one existing prediction from a structure file plus a matching PAE/confidence file
+- `score-batch`
+  - scans an existing Boltz output tree and scores every prediction it finds
+
+In the Colab notebook the matching mode names are:
+
+- `prepare`
+- `predict_and_score`
+- `score_existing_predictions`
+
 ## Input assumptions
 
 - This wrapper is built for the common case of one target protein chain and one binder chain.
 - The target is placed on chain `A` and the binder on chain `B` by default.
 - If you do not provide an MSA path, the YAML uses `msa: empty`. In that case you should usually run Boltz with `--use-msa-server`.
+
+## MSA and potentials
+
+- `--target-msa`
+  - path to a precomputed target-chain alignment file, usually `.a3m`
+- `--binder-msa`
+  - path to a precomputed binder-chain alignment file
+- `--use-msa-server`
+  - tells Boltz to build MSAs automatically when you do not already have them
+  - this is the simplest option for most first runs
+- `--use-potentials`
+  - passes Boltz's inference-time potentials flag
+  - this can improve physical plausibility, but is usually slower than a plain run
+
+For your first EC1 run, a good default is:
+
+- leave both MSA paths blank
+- turn on `--use-msa-server`
+- leave `--use-potentials` off for the first pass
+- optionally rerun only the best subset with `--use-potentials`
 
 ## Output summary
 
