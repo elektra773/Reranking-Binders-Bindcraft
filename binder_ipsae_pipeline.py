@@ -460,7 +460,16 @@ def run_boltz_predictions(args: argparse.Namespace) -> None:
         command.extend(["--diffusion_samples", str(args.diffusion_samples)])
 
     print("Running:", " ".join(command))
-    subprocess.run(command, check=True)
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout)
+    if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        raise RuntimeError(
+            f"Boltz failed with exit code {result.returncode}. "
+            "See the printed stdout/stderr above for details."
+        )
 
 
 def resolve_boltz_out_dir(args: argparse.Namespace) -> Path:
