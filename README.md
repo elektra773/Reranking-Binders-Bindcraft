@@ -54,6 +54,27 @@ That command builds one Boltz input YAML per ranked binder and keeps the rank an
 
 ## Typical workflow
 
+### Optional: run from a shell config file
+
+If you prefer a reusable launcher instead of a long command, use:
+
+- `run_binder_ipsae.sh`
+- `example_ec1_run.conf`
+
+Copy the example config, edit the paths and options, then run:
+
+```bash
+cp example_ec1_run.conf my_ec1_run.conf
+./run_binder_ipsae.sh my_ec1_run.conf
+```
+
+This launcher:
+
+- can `module load boltz` for shared Linux installs
+- writes a log file with `tee`
+- keeps all of your main settings in one editable config file
+- supports `prepare`, `predict-and-score`, and `score-batch`
+
 ### 1. Prepare inputs from a target PDB and a FASTA of binders
 
 This is useful when you already know the target structure or at least have a target chain sequence in a PDB.
