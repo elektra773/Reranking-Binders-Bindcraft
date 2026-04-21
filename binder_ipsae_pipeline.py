@@ -15,6 +15,7 @@ import csv
 import json
 import re
 import shutil
+import string
 import subprocess
 import sys
 from pathlib import Path
@@ -79,6 +80,7 @@ def parse_args() -> argparse.Namespace:
     add_target_arguments(prepare)
     add_binder_arguments(prepare)
     add_prepare_output_arguments(prepare)
+    add_yaml_generation_arguments(prepare)
 
     predict = subparsers.add_parser(
         "predict-and-score",
@@ -87,6 +89,7 @@ def parse_args() -> argparse.Namespace:
     add_target_arguments(predict)
     add_binder_arguments(predict)
     add_prepare_output_arguments(predict)
+    add_yaml_generation_arguments(predict)
     add_predict_arguments(predict)
     add_score_common_arguments(predict)
     predict.add_argument(
@@ -191,6 +194,12 @@ def add_target_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="Optional precomputed MSA for the target chain.",
+    )
+    parser.add_argument(
+        "--target-calcium-ions",
+        type=int,
+        default=0,
+        help="Number of calcium ions to include as CCD ligand 'CA'. Default: 0",
     )
 
 
@@ -306,6 +315,14 @@ def add_predict_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_yaml_generation_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--force-empty-msa",
+        action="store_true",
+        help="Write 'msa: empty' into the YAML instead of omitting MSA fields.",
+    )
+
+
 def add_score_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--pae-cutoff",
@@ -408,6 +425,8 @@ def prepare_inputs(args: argparse.Namespace) -> Path:
                 binder_chain_id=args.binder_chain_id,
                 target_msa=args.target_msa,
                 binder_msa=args.binder_msa,
+                target_calcium_ions=args.target_calcium_ions,
+                force_empty_msa=args.force_empty_msa,
             ),
             encoding="utf-8",
         )
@@ -650,6 +669,8 @@ def render_boltz_yaml(
     binder_chain_id: str,
     target_msa: Path | None,
     binder_msa: Path | None,
+    target_calcium_ions: int = 0,
+    force_empty_msa: bool = False,
 ) -> str:
     def chain_block(chain_id: str, sequence: str, msa_path: Path | None) -> list[str]:
         lines = [
@@ -659,15 +680,51 @@ def render_boltz_yaml(
         ]
         if msa_path is not None:
             lines.append(f"      msa: {yaml_quote(str(msa_path.expanduser().resolve()))}")
-        else:
+        elif force_empty_msa:
             lines.append("      msa: empty")
         return lines
 
     lines = ["version: 1", "sequences:"]
     lines.extend(chain_block(target_chain_id, target_sequence, target_msa))
     lines.extend(chain_block(binder_chain_id, binder_sequence, binder_msa))
+    if target_calcium_ions > 0:
+        reserved_ids = {target_chain_id, binder_chain_id}
+        calcium_ids = generate_molecule_ids(target_calcium_ions, reserved_ids)
+        lines.extend(
+            [
+                "  - ligand:",
+                f"      id: [{', '.join(yaml_quote(value) for value in calcium_ids)}]",
+                f"      ccd: {yaml_quote('CA')}",
+            ]
+        )
     lines.append("")
     return "\n".join(lines)
+
+
+def generate_molecule_ids(count: int, reserved_ids: set[str]) -> list[str]:
+    ids = []
+    index = 0
+    normalized_reserved = {value.upper() for value in reserved_ids}
+    while len(ids) < count:
+        candidate = index_to_chain_label(index)
+        index += 1
+        if candidate in normalized_reserved:
+            continue
+        ids.append(candidate)
+    return ids
+
+
+def index_to_chain_label(index: int) -> str:
+    letters = string.ascii_uppercase
+    label = []
+    current = index
+    while True:
+        current, remainder = divmod(current, len(letters))
+        label.append(letters[remainder])
+        if current == 0:
+            break
+        current -= 1
+    return "".join(reversed(label))
 
 
 def yaml_quote(value: str) -> str:
@@ -731,9 +788,7 @@ def score_existing_predictions(
 ) -> list[dict[str, str]]:
     predictions_root = predictions_root.expanduser().resolve()
     records = []
-    cif_paths = sorted(
-        predictions_root.glob(f"predictions/*/*_model_{model_index}.cif")
-    )
+    cif_paths = sorted(predictions_root.rglob(f"*_model_{model_index}.cif"))
     for structure_path in cif_paths:
         job_name = structure_path.stem.replace(f"_model_{model_index}", "")
         pae_path = structure_path.with_name(f"pae_{structure_path.stem}.npz")
@@ -758,12 +813,8 @@ def find_prediction_artifacts(
 ) -> dict[str, Path]:
     boltz_out_dir = boltz_out_dir.expanduser().resolve()
     structure_candidates = sorted(
-        boltz_out_dir.glob(f"predictions/*/{input_stem}_model_{model_index}.cif")
+        boltz_out_dir.rglob(f"{input_stem}_model_{model_index}.cif")
     )
-    if not structure_candidates:
-        structure_candidates = sorted(
-            boltz_out_dir.glob(f"predictions/{input_stem}/*_model_{model_index}.cif")
-        )
     if not structure_candidates:
         raise FileNotFoundError(
             f"Could not find a structure for input '{input_stem}' under {boltz_out_dir}"

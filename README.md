@@ -45,6 +45,7 @@ python3 binder_ipsae_pipeline.py prepare \
   --target-pdb ../EC1-2/EC1.pdb \
   --target-pdb-chain A \
   --target-name CDH23_EC1 \
+  --target-calcium-ions 3 \
   --binder-csv ../EC1-2/final_design_stats.csv \
   --work-dir binder_ipsae_runs
 ```
@@ -62,6 +63,7 @@ python3 binder_ipsae_pipeline.py prepare \
   --target-pdb EC1-2/EC1.pdb \
   --target-pdb-chain A \
   --target-name CDH23_EC1 \
+  --target-calcium-ions 3 \
   --binder-fasta binders.fasta \
   --work-dir binder_ipsae_runs
 ```
@@ -80,6 +82,7 @@ python3 binder_ipsae_pipeline.py prepare \
   --target-pdb EC1-2/EC1.pdb \
   --target-pdb-chain A \
   --target-name CDH23_EC1 \
+  --target-calcium-ions 3 \
   --binder-csv EC1-2/final_design_stats.csv \
   --work-dir binder_ipsae_runs
 ```
@@ -95,6 +98,7 @@ python3 binder_ipsae_pipeline.py predict-and-score \
   --target-pdb EC1-2/EC1.pdb \
   --target-pdb-chain A \
   --target-name CDH23_EC1 \
+  --target-calcium-ions 3 \
   --binder-csv EC1-2/final_design_stats.csv \
   --work-dir binder_ipsae_runs \
   --use-msa-server \
@@ -105,6 +109,7 @@ Optional flags you may also want:
 
 - `--target-msa path/to/target.a3m`
 - `--use-potentials`
+- `--force-empty-msa`
 - `--override`
 - `--recycling-steps 10`
 - `--diffusion-samples 5`
@@ -152,7 +157,9 @@ In the Colab notebook the matching mode names are:
 
 - This wrapper is built for the common case of one target protein chain and one binder chain.
 - The target is placed on chain `A` and the binder on chain `B` by default.
-- If you do not provide an MSA path, the YAML uses `msa: empty`. In that case you should usually run Boltz with `--use-msa-server`.
+- If you do not provide an MSA path, the YAML now omits the `msa` field so Boltz can use `--use-msa-server` normally.
+- Use `--force-empty-msa` only when you intentionally want single-sequence mode.
+- If your target needs calcium ions, add `--target-calcium-ions N` and the YAML will append `N` ligand entries with CCD code `CA`.
 
 ## MSA and potentials
 
@@ -163,9 +170,15 @@ In the Colab notebook the matching mode names are:
 - `--use-msa-server`
   - tells Boltz to build MSAs automatically when you do not already have them
   - this is the simplest option for most first runs
+- `--force-empty-msa`
+  - explicitly writes `msa: empty` into the YAML
+  - use this only when you intentionally want single-sequence mode
 - `--use-potentials`
   - passes Boltz's inference-time potentials flag
   - this can improve physical plausibility, but is usually slower than a plain run
+- `--target-calcium-ions`
+  - appends calcium ions as Boltz ligands with CCD code `CA`
+  - useful when your target structure depends on bound calcium
 
 For your first EC1 run, a good default is:
 
