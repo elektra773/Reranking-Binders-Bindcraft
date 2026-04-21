@@ -354,17 +354,43 @@ def main() -> int:
 
     if args.command == "predict-and-score":
         manifest_path = prepare_inputs(args)
-        run_boltz_predictions(args)
-        records = score_from_manifest(
+        boltz_error: RuntimeError | None = None
+        try:
+            run_boltz_predictions(args)
+        except RuntimeError as exc:
+            boltz_error = exc
+
+        records, missing_jobs, total_jobs = score_from_manifest(
             manifest_path=manifest_path,
             boltz_out_dir=resolve_boltz_out_dir(args),
             model_index=0,
             pae_cutoff=args.pae_cutoff,
             dist_cutoff=args.dist_cutoff,
             ipsae_script=args.ipsae_script,
+            skip_missing=boltz_error is not None,
         )
-        write_flat_summary(args.summary_csv, records)
-        print(f"Wrote summary CSV to {args.summary_csv.resolve()}")
+
+        if records:
+            write_flat_summary(args.summary_csv, records)
+            if missing_jobs:
+                print(
+                    f"Wrote partial summary CSV to {args.summary_csv.resolve()} "
+                    f"for {total_jobs - len(missing_jobs)}/{total_jobs} completed jobs.",
+                    file=sys.stderr,
+                )
+                print_missing_jobs(missing_jobs)
+            else:
+                print(f"Wrote summary CSV to {args.summary_csv.resolve()}")
+        elif boltz_error is not None:
+            print(
+                "Boltz failed before any prediction artifacts were available to score.",
+                file=sys.stderr,
+            )
+
+        if boltz_error is not None:
+            print(str(boltz_error), file=sys.stderr)
+            return 1
+
         return 0
 
     if args.command == "score":
@@ -753,15 +779,23 @@ def score_from_manifest(
     pae_cutoff: float,
     dist_cutoff: float,
     ipsae_script: Path,
-) -> list[dict[str, str]]:
+    skip_missing: bool = False,
+) -> tuple[list[dict[str, str]], list[str], int]:
     records = []
     manifest = read_csv_rows(manifest_path)
+    missing_jobs = []
     for row in manifest:
-        prediction = find_prediction_artifacts(
-            boltz_out_dir=boltz_out_dir,
-            input_stem=Path(row["yaml_path"]).stem,
-            model_index=model_index,
-        )
+        try:
+            prediction = find_prediction_artifacts(
+                boltz_out_dir=boltz_out_dir,
+                input_stem=Path(row["yaml_path"]).stem,
+                model_index=model_index,
+            )
+        except FileNotFoundError:
+            if not skip_missing:
+                raise
+            missing_jobs.append(row["job_name"])
+            continue
         summary = score_prediction(
             pae_path=prediction["pae"],
             structure_path=prediction["structure"],
@@ -776,7 +810,8 @@ def score_from_manifest(
             flat_row["binder_name"] = row["binder_name"]
             flat_row["binder_chain_id"] = row["binder_chain_id"]
             records.append(flat_row)
-    return records
+
+    return records, missing_jobs, len(manifest)
 
 
 def score_existing_predictions(
@@ -826,6 +861,19 @@ def find_prediction_artifacts(
         raise FileNotFoundError(f"Expected PAE file next to {structure_path}: {pae_path}")
 
     return {"structure": structure_path, "pae": pae_path}
+
+
+def print_missing_jobs(missing_jobs: list[str], preview_count: int = 10) -> None:
+    if not missing_jobs:
+        return
+    preview = ", ".join(missing_jobs[:preview_count])
+    suffix = ""
+    if len(missing_jobs) > preview_count:
+        suffix = f", ... ({len(missing_jobs) - preview_count} more)"
+    print(
+        f"Missing prediction artifacts for {len(missing_jobs)} job(s): {preview}{suffix}",
+        file=sys.stderr,
+    )
 
 
 def score_prediction(

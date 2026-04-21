@@ -126,6 +126,8 @@ python3 binder_ipsae_pipeline.py predict-and-score \
   --summary-csv binder_ipsae_runs/ipsae_summary.csv
 ```
 
+If Boltz crashes partway through a large batch, the wrapper now scores any completed predictions it can find and writes a partial summary CSV before exiting with a nonzero status. That makes it much easier to rerun in the same `--work-dir` and keep accumulated progress.
+
 Optional flags you may also want:
 
 - `--target-msa path/to/target.a3m`
@@ -163,6 +165,7 @@ python3 binder_ipsae_pipeline.py score-batch \
 - `predict-and-score`
   - creates inputs, runs Boltz, then runs `ipsae.py`
   - this is the full end-to-end mode
+  - if Boltz only completes part of the batch, the script still writes a partial summary for the finished jobs
 - `score`
   - scores one existing prediction from a structure file plus a matching PAE/confidence file
 - `score-batch`
